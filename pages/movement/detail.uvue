@@ -1,0 +1,280 @@
+<template>
+	<view class="page">
+		<scroll-view class="body" direction="vertical">
+			<view class="hero">
+				<text class="hero-category">{{moveCategory}}</text>
+				<text class="hero-name">{{moveName}}</text>
+				<view class="tag-row">
+					<view class="tag">
+						<text class="tag-text">{{typeText}}</text>
+					</view>
+					<view class="tag">
+						<text class="tag-text">{{sectionText}}</text>
+					</view>
+					<view class="tag">
+						<text class="tag-text">{{sceneText}}</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="card">
+				<text class="card-title">目标肌肉</text>
+				<view class="muscle-row">
+					<text class="muscle-label">主要</text>
+					<text class="muscle-value">{{primaryText}}</text>
+				</view>
+				<view v-if="secondaryText.length > 0" class="muscle-row">
+					<text class="muscle-label">辅助</text>
+					<text class="muscle-value">{{secondaryText}}</text>
+				</view>
+			</view>
+
+			<view class="card">
+				<text class="card-title">动作信息</text>
+				<view class="info-row">
+					<text class="info-label">分类</text>
+					<text class="info-value">{{moveCategory}}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">器械</text>
+					<text class="info-value">{{sectionText}}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">训练类型</text>
+					<text class="info-value">{{typeText}}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">适用场景</text>
+					<text class="info-value">{{sceneText}}</text>
+				</view>
+			</view>
+
+			<view class="card">
+				<text class="card-title">别名</text>
+				<text class="alias-text">{{aliasText}}</text>
+			</view>
+
+			<view class="bottom-space"></view>
+		</scroll-view>
+
+		<view class="footer">
+			<view class="add-btn" @tap="addToTraining">
+				<text class="add-btn-text">加入当前训练</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="ts">
+	import { findMove, sectionLabel, exetypeLabel } from '@/common/moves.uts'
+	import { loadActive, newRecord, saveActive, newMove } from '@/common/storage.uts'
+	import { todayKey } from '@/common/date.uts'
+	import type { Movement, TrainRecord, TrainMove } from '@/common/types.uts'
+
+	const move = ref<Movement | null>(null)
+	const moveName = ref('')
+	const moveCategory = ref('')
+	const typeText = ref('')
+	const sectionText = ref('')
+	const sceneText = ref('')
+	const primaryText = ref('')
+	const secondaryText = ref('')
+	const aliasText = ref('')
+
+	onLoad((options : OnLoadOptions) => {
+		const raw = options['id']
+		const id = raw == null ? '' : (raw as string)
+		const m = findMove(id)
+		if (m == null) {
+			moveName.value = '未找到动作'
+			return
+		}
+		move.value = m
+		moveName.value = m.name
+		moveCategory.value = m.category
+		typeText.value = exetypeLabel(m.exetype)
+		sectionText.value = sectionLabel(m.section)
+		sceneText.value = m.home_friendly ? '居家 / 健身房' : '健身房'
+		primaryText.value = m.primary.length > 0 ? m.primary.join('、') : '未标注'
+		secondaryText.value = m.secondary.join('、')
+		const aliases : string[] = []
+		for (let i = 0; i < m.aliases.length && aliases.length < 8; i++) {
+			const a = m.aliases[i]
+			if (a != m.name && a != m.id) {
+				aliases.push(a)
+			}
+		}
+		aliasText.value = aliases.length > 0 ? aliases.join(' / ') : '无'
+		uni.setNavigationBarTitle({ title: m.name })
+	})
+
+	function addToTraining() {
+		const m = move.value
+		if (m == null) {
+			return
+		}
+		let rec = loadActive()
+		if (rec == null) {
+			rec = newRecord()
+			rec.date = todayKey()
+		}
+		let exists = false
+		for (let i = 0; i < rec.moves.length; i++) {
+			if (rec.moves[i].key == m.id) {
+				exists = true
+				break
+			}
+		}
+		if (!exists) {
+			rec.moves.push(newMove(m))
+		}
+		saveActive(rec)
+		uni.showToast({
+			title: exists ? '已在当前训练中' : '已加入当前训练',
+			icon: 'none'
+		})
+		setTimeout(() => {
+			uni.navigateBack({})
+		}, 500)
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		background-color: #F2F2F7;
+	}
+
+	.body {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.hero {
+		padding: 20px;
+		background-color: #FFFFFF;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.hero-category {
+		font-size: 12px;
+		color: #007AFF;
+		font-weight: 600;
+	}
+
+	.hero-name {
+		font-size: 26px;
+		font-weight: 700;
+		color: #1C1C1E;
+		margin-top: 8px;
+	}
+
+	.tag-row {
+		display: flex;
+		flex-direction: row;
+		margin-top: 14px;
+	}
+
+	.tag {
+		padding: 5px 10px;
+		border-radius: 8px;
+		background-color: #F2F2F7;
+		margin-right: 8px;
+	}
+
+	.tag-text {
+		font-size: 11px;
+		color: #636366;
+	}
+
+	.card {
+		margin: 12px 16px 0 16px;
+		padding: 16px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.card-title {
+		font-size: 15px;
+		font-weight: 700;
+		color: #1C1C1E;
+		margin-bottom: 10px;
+	}
+
+	.muscle-row {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		margin-top: 6px;
+	}
+
+	.muscle-label {
+		width: 44px;
+		font-size: 12px;
+		color: #8E8E93;
+	}
+
+	.muscle-value {
+		flex: 1;
+		font-size: 14px;
+		color: #3A3A3C;
+	}
+
+	.info-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 7px 0;
+	}
+
+	.info-label {
+		font-size: 13px;
+		color: #8E8E93;
+	}
+
+	.info-value {
+		font-size: 13px;
+		color: #3A3A3C;
+	}
+
+	.alias-text {
+		font-size: 13px;
+		color: #636366;
+		line-height: 20px;
+	}
+
+	.bottom-space {
+		height: 20px;
+	}
+
+	.footer {
+		padding: 10px 16px 16px 16px;
+		background-color: #FFFFFF;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E5EA;
+	}
+
+	.add-btn {
+		height: 48px;
+		border-radius: 14px;
+		background-color: #007AFF;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.add-btn-text {
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+</style>

@@ -1,0 +1,123 @@
+import movesJson from '@/static/moves.json'
+import type { Movement, MovementGroup } from './types.uts'
+
+export const CATEGORY_ORDER : string[] = [
+	'胸', '背', '腿', '臀部', '肩', '二头', '三头', '前臂', '小腿',
+	'腹部', '核心稳定', '斜方肌', '全身', '功能性', '颈部',
+	'有氧', '拉伸', '热身动作', '计时动作', 'Tabata'
+]
+
+export const ALL_MOVES : Movement[] = movesJson as Movement[]
+
+export const SECTION_LABELS : Map<string, string> = new Map<string, string>([
+	['barbell', '杠铃'],
+	['dumbell', '哑铃'],
+	['dumbbell', '哑铃'],
+	['kettle_bell', '壶铃'],
+	['cable', '绳索'],
+	['hammer', '器械'],
+	['smithmachine', '史密斯'],
+	['machine', '机械'],
+	['trxband', 'TRX&弹力带'],
+	['selfweight', '徒手'],
+	['other', '其他']
+])
+
+export const EXETYPE_LABELS : Map<string, string> = new Map<string, string>([
+	['weight', '重量训练'],
+	['cardio', '有氧训练'],
+	['times', '计次训练'],
+	['record', '计时训练'],
+	['plus_weight', '负重训练'],
+	['help', '辅助训练'],
+	['stretch', '拉伸'],
+	['tabata', 'Tabata']
+])
+
+export function allMoves() : Movement[] {
+	return ALL_MOVES
+}
+
+export function moveGroups() : MovementGroup[] {
+	const counter = new Map<string, number>()
+	ALL_MOVES.forEach((m : Movement) => {
+		const c = m.category
+		const old = counter.get(c)
+		counter.set(c, (old == null ? 0 : (old as number)) + 1)
+	})
+	const result : MovementGroup[] = []
+	const used = new Map<string, boolean>()
+	CATEGORY_ORDER.forEach((c : string) => {
+		const n = counter.get(c)
+		if (n != null) {
+			result.push({ key: c, label: c, count: n as number } as MovementGroup)
+			used.set(c, true)
+		}
+	})
+	ALL_MOVES.forEach((m : Movement) => {
+		if (!used.has(m.category)) {
+			const n = counter.get(m.category)
+			result.push({ key: m.category, label: m.category, count: n == null ? 0 : (n as number) } as MovementGroup)
+			used.set(m.category, true)
+		}
+	})
+	return result
+}
+
+export function movesByCategory(category : string) : Movement[] {
+	if (category.length == 0 || category == '全部') {
+		return ALL_MOVES
+	}
+	return ALL_MOVES.filter((m : Movement) : boolean => m.category == category)
+}
+
+export function searchMoves(keyword : string, category : string) : Movement[] {
+	const base = movesByCategory(category)
+	const kw = keyword.trim().toLowerCase()
+	if (kw.length == 0) {
+		return base
+	}
+	return base.filter((m : Movement) : boolean => {
+		if (m.name.toLowerCase().includes(kw)) {
+			return true
+		}
+		if (m.category.toLowerCase().includes(kw)) {
+			return true
+		}
+		for (let i = 0; i < m.primary.length; i++) {
+			if (m.primary[i].toLowerCase().includes(kw)) {
+				return true
+			}
+		}
+		for (let i = 0; i < m.secondary.length; i++) {
+			if (m.secondary[i].toLowerCase().includes(kw)) {
+				return true
+			}
+		}
+		for (let i = 0; i < m.aliases.length; i++) {
+			if (m.aliases[i].toLowerCase().includes(kw)) {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+export function findMove(id : string) : Movement | null {
+	for (let i = 0; i < ALL_MOVES.length; i++) {
+		if (ALL_MOVES[i].id == id) {
+			return ALL_MOVES[i]
+		}
+	}
+	return null
+}
+
+export function sectionLabel(key : string) : string {
+	const label = SECTION_LABELS.get(key)
+	return label == null ? '其他' : (label as string)
+}
+
+export function exetypeLabel(key : string) : string {
+	const label = EXETYPE_LABELS.get(key)
+	return label == null ? '训练' : (label as string)
+}

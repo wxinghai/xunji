@@ -1,0 +1,137 @@
+import type { TrainRecord, TrainMove, TrainSet, Movement } from './types.uts'
+
+const KEY_RECORDS = 'xunji_records_v1'
+const KEY_ACTIVE = 'xunji_active_v1'
+
+export function loadRecords() : TrainRecord[] {
+	const raw = uni.getStorageSync(KEY_RECORDS)
+	if (raw == null || raw == '') {
+		return []
+	}
+	const text = raw as string
+	if (text.length == 0) {
+		return []
+	}
+	const list = JSON.parse<TrainRecord[]>(text)
+	if (list == null) {
+		return []
+	}
+	list.sort((a : TrainRecord, b : TrainRecord) : number => b.date.localeCompare(a.date))
+	return list
+}
+
+export function saveRecords(records : TrainRecord[]) : void {
+	uni.setStorageSync(KEY_RECORDS, JSON.stringify(records))
+}
+
+export function upsertRecord(record : TrainRecord) : void {
+	const records = loadRecords()
+	let found = false
+	for (let i = 0; i < records.length; i++) {
+		if (records[i].id == record.id) {
+			records[i] = record
+			found = true
+			break
+		}
+	}
+	if (!found) {
+		records.push(record)
+	}
+	saveRecords(records)
+}
+
+export function removeRecord(id : string) : void {
+	const records = loadRecords()
+	const next : TrainRecord[] = []
+	for (let i = 0; i < records.length; i++) {
+		if (records[i].id != id) {
+			next.push(records[i])
+		}
+	}
+	saveRecords(next)
+}
+
+export function recordsOfDate(date : string) : TrainRecord[] {
+	const records = loadRecords()
+	return records.filter((r : TrainRecord) : boolean => r.date == date)
+}
+
+export function recordCountByDate() : Map<string, number> {
+	const records = loadRecords()
+	const map = new Map<string, number>()
+	records.forEach((r : TrainRecord) => {
+		const old = map.get(r.date)
+		map.set(r.date, (old == null ? 0 : (old as number)) + 1)
+	})
+	return map
+}
+
+export function newRecord() : TrainRecord {
+	const now = new Date()
+	const record : TrainRecord = {
+		id: now.getTime().toString(),
+		date: '',
+		title: '自由训练',
+		note: '',
+		start: now.getTime(),
+		end: 0,
+		moves: []
+	} as TrainRecord
+	return record
+}
+
+export function newMove(movement : Movement) : TrainMove {
+	const set : TrainSet = { weight: 0, reps: 10, seconds: 0, done: false } as TrainSet
+	return {
+		key: movement.id,
+		name: movement.name,
+		category: movement.category,
+		exetype: movement.exetype,
+		section: movement.section,
+		sets: [set]
+	} as TrainMove
+}
+
+export function loadActive() : TrainRecord | null {
+	const raw = uni.getStorageSync(KEY_ACTIVE)
+	if (raw == null || raw == '') {
+		return null
+	}
+	const text = raw as string
+	if (text.length == 0) {
+		return null
+	}
+	return JSON.parse<TrainRecord>(text)
+}
+
+export function saveActive(record : TrainRecord) : void {
+	uni.setStorageSync(KEY_ACTIVE, JSON.stringify(record))
+}
+
+export function clearActive() : void {
+	uni.removeStorageSync(KEY_ACTIVE)
+}
+
+export function recordVolume(record : TrainRecord) : number {
+	let total = 0
+	record.moves.forEach((m : TrainMove) => {
+		m.sets.forEach((s : TrainSet) => {
+			if (s.done) {
+				total += s.weight * s.reps
+			}
+		})
+	})
+	return total
+}
+
+export function recordSets(record : TrainRecord) : number {
+	let total = 0
+	record.moves.forEach((m : TrainMove) => {
+		m.sets.forEach((s : TrainSet) => {
+			if (s.done) {
+				total += 1
+			}
+		})
+	})
+	return total
+}

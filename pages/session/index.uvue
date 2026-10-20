@@ -1,0 +1,515 @@
+<template>
+	<view class="page">
+		<view class="topbar">
+			<view class="topbar-left">
+				<text class="topbar-title">训练中</text>
+				<text class="topbar-sub">{{moveCount}} 个动作 · {{setCount}} 组</text>
+			</view>
+			<view class="clock">
+				<text class="clock-text">{{clockText}}</text>
+			</view>
+		</view>
+
+		<scroll-view class="body" direction="vertical">
+			<view v-if="record.moves.length == 0" class="empty">
+				<text class="empty-title">还没有动作</text>
+				<text class="empty-sub">从动作库选择动作后开始记录</text>
+			</view>
+
+			<view v-for="(mv, mi) in record.moves" :key="mv.key" class="move-card">
+				<view class="move-head">
+					<view class="move-head-main">
+						<text class="move-name">{{mv.name}}</text>
+						<text class="move-meta">{{mv.category}} · {{typeText(mv.exetype)}} · {{mv.sets.length}} 组</text>
+					</view>
+					<text class="move-del" @tap="removeMove(mi)">删除</text>
+				</view>
+
+				<view class="set-head">
+					<text class="set-idx">组</text>
+					<text class="set-col">重量 kg</text>
+					<text class="set-col">次数</text>
+					<text class="set-col-done">完成</text>
+				</view>
+
+				<view v-for="(st, si) in mv.sets" :key="si" class="set-row">
+					<text class="set-idx set-idx-num">{{si + 1}}</text>
+					<input class="set-input" type="digit" :value="st.weight > 0 ? st.weight.toString() : ''" placeholder="0"
+						placeholder-style="color:#C7C7CC" @input="onWeightInput($event as UniInputEvent, mi, si)" />
+					<input class="set-input" type="digit" :value="st.reps > 0 ? st.reps.toString() : ''" placeholder="0"
+						placeholder-style="color:#C7C7CC" @input="onRepsInput($event as UniInputEvent, mi, si)" />
+					<view class="check" :class="{ 'check-on': st.done }" @tap="toggleSet(mi, si)">
+						<text class="check-mark">{{st.done ? '✓' : ''}}</text>
+					</view>
+				</view>
+
+				<view class="add-set" @tap="addSet(mi)">
+					<text class="add-set-text">+ 添加一组</text>
+				</view>
+			</view>
+
+			<view class="bottom-space"></view>
+		</scroll-view>
+
+		<view v-if="restLeft > 0" class="rest-bar">
+			<view class="rest-left">
+				<text class="rest-label">组间休息</text>
+				<text class="rest-time">{{restText}}</text>
+			</view>
+			<view class="rest-skip" @tap="skipRest">
+				<text class="rest-skip-text">跳过</text>
+			</view>
+		</view>
+
+		<view class="footer">
+			<view class="footer-btn footer-add" @tap="goSelect">
+				<text class="footer-add-text">+ 动作</text>
+			</view>
+			<view class="footer-btn footer-done" @tap="finish">
+				<text class="footer-done-text">完成训练</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="ts">
+	import { loadActive, saveActive, clearActive, newRecord, upsertRecord, newMove } from '@/common/storage.uts'
+	import { todayKey, formatClock } from '@/common/date.uts'
+	import { exetypeLabel } from '@/common/moves.uts'
+	import type { TrainRecord, TrainMove, TrainSet } from '@/common/types.uts'
+
+	const record = ref<TrainRecord>(newRecord())
+	const elapsed = ref(0)
+	const restLeft = ref(0)
+	const moveCount = ref(0)
+	const setCount = ref(0)
+	const clockText = ref('00:00')
+	const restText = ref('01:30')
+	let timer = 0
+
+	onLoad(() => {
+		reload()
+		timer = setInterval(tick, 1000) as number
+		tick()
+	})
+
+	onShow(() => {
+		reload()
+	})
+
+	onUnload(() => {
+		if (timer != 0) {
+			clearInterval(timer)
+			timer = 0
+		}
+		if (record.value.end == 0 && record.value.moves.length > 0) {
+			saveActive(record.value)
+		}
+	})
+
+	function reload() {
+		const running = loadActive()
+		if (running != null) {
+			record.value = running
+		} else {
+			const rec = newRecord()
+			rec.date = todayKey()
+			saveActive(rec)
+			record.value = rec
+		}
+		countSets()
+	}
+
+	function countSets() {
+		let sets = 0
+		record.value.moves.forEach((m : TrainMove) => {
+			sets += m.sets.length
+		})
+		moveCount.value = record.value.moves.length
+		setCount.value = sets
+	}
+
+	function tick() {
+		const start = record.value.start
+		elapsed.value = Math.floor((Date.now() - start) / 1000)
+		clockText.value = formatClock(elapsed.value)
+		if (restLeft.value > 0) {
+			restLeft.value -= 1
+			restText.value = formatClock(restLeft.value)
+		}
+	}
+
+	function typeText(exetype : string) : string {
+		return exetypeLabel(exetype)
+	}
+
+	function onWeightInput(e : UniInputEvent, mi : number, si : number) {
+		const v = parseFloat(e.detail.value)
+		record.value.moves[mi].sets[si].weight = isNaN(v) ? 0 : v
+		saveActive(record.value)
+	}
+
+	function onRepsInput(e : UniInputEvent, mi : number, si : number) {
+		const v = parseFloat(e.detail.value)
+		record.value.moves[mi].sets[si].reps = isNaN(v) ? 0 : v
+		saveActive(record.value)
+	}
+
+	function toggleSet(mi : number, si : number) {
+		const st = record.value.moves[mi].sets[si]
+		st.done = !st.done
+		if (st.done) {
+			restLeft.value = 90
+			restText.value = formatClock(restLeft.value)
+		}
+		saveActive(record.value)
+		countSets()
+	}
+
+	function addSet(mi : number) {
+		const sets = record.value.moves[mi].sets
+		let last : TrainSet | null = null
+		if (sets.length > 0) {
+			last = sets[sets.length - 1]
+		}
+		const st : TrainSet = {
+			weight: last == null ? 0 : last.weight,
+			reps: last == null ? 10 : last.reps,
+			seconds: 0,
+			done: false
+		} as TrainSet
+		sets.push(st)
+		saveActive(record.value)
+		countSets()
+	}
+
+	function removeMove(mi : number) {
+		record.value.moves.splice(mi, 1)
+		saveActive(record.value)
+		countSets()
+	}
+
+	function skipRest() {
+		restLeft.value = 0
+	}
+
+	function goSelect() {
+		uni.navigateTo({ url: '/pages/session/select' })
+	}
+
+	function finish() {
+		const rec = record.value
+		if (rec.moves.length == 0) {
+			uni.showToast({ title: '还没有动作', icon: 'none' })
+			return
+		}
+		rec.end = Date.now()
+		if (rec.date.length == 0) {
+			rec.date = todayKey()
+		}
+		upsertRecord(rec)
+		clearActive()
+		uni.showToast({ title: '训练完成', icon: 'success' })
+		setTimeout(() => {
+			uni.switchTab({ url: '/pages/train/index' })
+		}, 600)
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		background-color: #F2F2F7;
+	}
+
+	.topbar {
+		padding: 12px 18px;
+		background-color: #FFFFFF;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.topbar-left {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.topbar-title {
+		font-size: 20px;
+		font-weight: 700;
+		color: #1C1C1E;
+	}
+
+	.topbar-sub {
+		font-size: 11px;
+		color: #8E8E93;
+		margin-top: 3px;
+	}
+
+	.clock {
+		padding: 6px 14px;
+		border-radius: 20px;
+		background-color: #EAF3FF;
+	}
+
+	.clock-text {
+		font-size: 15px;
+		font-weight: 700;
+		color: #007AFF;
+	}
+
+	.body {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.empty {
+		margin: 16px;
+		padding: 40px 20px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.empty-title {
+		font-size: 16px;
+		font-weight: 600;
+		color: #1C1C1E;
+	}
+
+	.empty-sub {
+		font-size: 12px;
+		color: #8E8E93;
+		margin-top: 6px;
+	}
+
+	.move-card {
+		margin: 12px 14px 0 14px;
+		padding: 14px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.move-head {
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		justify-content: space-between;
+	}
+
+	.move-head-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.move-name {
+		font-size: 16px;
+		font-weight: 700;
+		color: #1C1C1E;
+	}
+
+	.move-meta {
+		font-size: 11px;
+		color: #8E8E93;
+		margin-top: 4px;
+	}
+
+	.move-del {
+		font-size: 12px;
+		color: #FF3B30;
+		padding: 4px 0 4px 12px;
+	}
+
+	.set-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-top: 12px;
+		padding-bottom: 6px;
+	}
+
+	.set-idx {
+		width: 30px;
+		font-size: 11px;
+		color: #8E8E93;
+	}
+
+	.set-idx-num {
+		font-size: 13px;
+		color: #636366;
+		font-weight: 600;
+	}
+
+	.set-col {
+		flex: 1;
+		font-size: 11px;
+		color: #8E8E93;
+		text-align: center;
+	}
+
+	.set-col-done {
+		width: 44px;
+		font-size: 11px;
+		color: #8E8E93;
+		text-align: center;
+	}
+
+	.set-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-top: 6px;
+	}
+
+	.set-input {
+		flex: 1;
+		height: 34px;
+		margin-left: 6px;
+		margin-right: 6px;
+		border-radius: 8px;
+		background-color: #F2F2F7;
+		font-size: 14px;
+		color: #1C1C1E;
+		text-align: center;
+	}
+
+	.check {
+		width: 30px;
+		height: 30px;
+		margin-left: 7px;
+		margin-right: 7px;
+		border-radius: 15px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #C7C7CC;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.check-on {
+		background-color: #34C759;
+		border-color: #34C759;
+	}
+
+	.check-mark {
+		font-size: 15px;
+		color: #FFFFFF;
+		font-weight: 700;
+	}
+
+	.add-set {
+		margin-top: 10px;
+		padding-top: 10px;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #F2F2F7;
+		display: flex;
+		flex-direction: row;
+		justify-content: center;
+	}
+
+	.add-set-text {
+		font-size: 13px;
+		color: #007AFF;
+		font-weight: 600;
+	}
+
+	.bottom-space {
+		height: 20px;
+	}
+
+	.rest-bar {
+		margin: 0 14px 8px 14px;
+		padding: 10px 14px;
+		border-radius: 14px;
+		background-color: #FFF4E5;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.rest-left {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.rest-label {
+		font-size: 12px;
+		color: #B25E00;
+	}
+
+	.rest-time {
+		font-size: 18px;
+		font-weight: 700;
+		color: #B25E00;
+		margin-left: 8px;
+	}
+
+	.rest-skip {
+		padding: 5px 12px;
+		border-radius: 12px;
+		background-color: #FFE0B2;
+	}
+
+	.rest-skip-text {
+		font-size: 12px;
+		color: #B25E00;
+		font-weight: 600;
+	}
+
+	.footer {
+		padding: 10px 14px 16px 14px;
+		background-color: #FFFFFF;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E5EA;
+		display: flex;
+		flex-direction: row;
+	}
+
+	.footer-btn {
+		height: 48px;
+		border-radius: 14px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.footer-add {
+		width: 110px;
+		background-color: #EAF3FF;
+	}
+
+	.footer-add-text {
+		font-size: 15px;
+		font-weight: 600;
+		color: #007AFF;
+	}
+
+	.footer-done {
+		flex: 1;
+		margin-left: 10px;
+		background-color: #007AFF;
+	}
+
+	.footer-done-text {
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+</style>

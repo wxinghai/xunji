@@ -1,0 +1,76 @@
+{
+	"pages": [
+		{
+			"path": "pages/train/index",
+			"style": {
+				"navigationStyle": "custom",
+				"backgroundColorContent": "#F2F2F7"
+			}
+		},
+		{
+			"path": "pages/movement/index",
+			"style": {
+				"navigationStyle": "custom",
+				"backgroundColorContent": "#F2F2F7"
+			}
+		},
+		{
+			"path": "pages/history/index",
+			"style": {
+				"navigationStyle": "custom",
+				"backgroundColorContent": "#F2F2F7"
+			}
+		},
+		{
+			"path": "pages/session/index",
+			"style": {
+				"navigationBarTitleText": "训练中",
+				"backgroundColorContent": "#F2F2F7"
+			}
+		},
+		{
+			"path": "pages/session/select",
+			"style": {
+				"navigationBarTitleText": "选择动作",
+				"backgroundColorContent": "#F2F2F7"
+			}
+		},
+		{
+			"path": "pages/movement/detail",
+			"style": {
+				"navigationBarTitleText": "动作详情",
+				"backgroundColorContent": "#F2F2F7"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "训记",
+		"navigationBarBackgroundColor": "#F2F2F7",
+		"backgroundColor": "#F2F2F7",
+		"backgroundColorContent": "#F2F2F7"
+	},
+	"tabBar": {
+		"color": "#8E8E93",
+		"selectedColor": "#007AFF",
+		"backgroundColor": "#FFFFFF",
+		"borderStyle": "black",
+		"fontSize": "11px",
+		"height": "52px",
+		"list": [
+			{
+				"pagePath": "pages/train/index",
+				"text": "训练"
+			},
+			{
+				"pagePath": "pages/movement/index",
+				"text": "动作"
+			},
+			{
+				"pagePath": "pages/history/index",
+				"text": "历史"
+			}
+		]
+	},
+	"uniIdRouter": {}
+}

@@ -1,0 +1,475 @@
+<template>
+	<view class="page">
+		<view class="status-bar"></view>
+		<view class="header">
+			<text class="title">历史</text>
+			<text class="subtitle">共 {{totalCount}} 次训练</text>
+		</view>
+
+		<scroll-view class="body" direction="vertical">
+			<view class="calendar">
+				<view class="cal-head">
+					<text class="cal-arrow" @tap="prevMonth">‹</text>
+					<text class="cal-month">{{monthLabel}}</text>
+					<text class="cal-arrow" @tap="nextMonth">›</text>
+				</view>
+				<view class="week-row">
+					<text v-for="w in weekLabels" :key="w" class="week-cell">{{w}}</text>
+				</view>
+				<view class="days-wrap">
+					<view v-for="(d, idx) in cells" :key="idx" class="day-cell" @tap="pickDay(d)">
+						<view v-if="d > 0" class="day-inner" :class="{ 'day-selected': dayKeyOf(d) == selected, 'day-today': dayKeyOf(d) == today }">
+							<text class="day-text" :class="{ 'day-text-selected': dayKeyOf(d) == selected }">{{d}}</text>
+							<view v-if="hasMark(d)" class="day-dot"></view>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<view class="list-head">
+				<text class="list-title">{{selectedLabel}}</text>
+				<text class="list-count">{{dayRecords.length}} 次</text>
+			</view>
+
+			<view v-if="dayRecords.length == 0" class="empty">
+				<text class="empty-text">这天没有训练记录</text>
+			</view>
+
+			<view v-for="item in dayRecords" :key="item.id" class="record">
+				<view class="record-head" @tap="toggleExpand(item.id)">
+					<view class="record-head-main">
+						<text class="record-title">{{item.title}}</text>
+						<text class="record-sub">{{recordSub(item)}}</text>
+					</view>
+					<text class="record-arrow">{{expandedId == item.id ? '⌄' : '›'}}</text>
+				</view>
+
+				<view v-if="expandedId == item.id" class="record-detail">
+					<view v-for="mv in item.moves" :key="mv.key" class="detail-move">
+						<text class="detail-name">{{mv.name}}</text>
+						<view class="detail-sets">
+							<text v-for="(s, si) in mv.sets" :key="si" class="detail-set">{{setText(s)}}</text>
+						</view>
+					</view>
+					<view class="record-actions">
+						<text class="delete-text" @tap="confirmDelete(item.id)">删除这次训练</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="bottom-space"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="ts">
+	import { todayKey, dateKeyOf, daysInMonth, firstWeekday, shortDate, formatDuration } from '@/common/date.uts'
+	import { loadRecords, recordsOfDate, recordCountByDate, removeRecord, recordVolume } from '@/common/storage.uts'
+	import type { TrainRecord, TrainMove, TrainSet } from '@/common/types.uts'
+
+	const weekLabels : string[] = ['日', '一', '二', '三', '四', '五', '六']
+	const now = new Date()
+	const year = ref(now.getFullYear())
+	const month = ref(now.getMonth() + 1)
+	const today = todayKey()
+	const selected = ref(today)
+	const totalCount = ref(0)
+	const markMap = ref<Map<string, number>>(new Map())
+	const dayRecords = ref<TrainRecord[]>([])
+	const expandedId = ref('')
+
+	const monthLabel = computed<string>(() : string => {
+		return year.value.toString() + ' 年 ' + month.value.toString() + ' 月'
+	})
+
+	const cells = computed<number[]>(() : number[] => {
+		const first = firstWeekday(year.value, month.value)
+		const total = daysInMonth(year.value, month.value)
+		const arr : number[] = []
+		for (let i = 0; i < first; i++) {
+			arr.push(0)
+		}
+		for (let d = 1; d <= total; d++) {
+			arr.push(d)
+		}
+		return arr
+	})
+
+	const selectedLabel = computed<string>(() : string => {
+		const key = selected.value
+		if (key.length < 10) {
+			return key
+		}
+		const m = parseInt(key.substring(5, 7))
+		const d = parseInt(key.substring(8, 10))
+		const date = new Date(parseInt(key.substring(0, 4)), m - 1, d)
+		const weeks : string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+		return m.toString() + '月' + d.toString() + '日 ' + weeks[date.getDay()]
+	})
+
+	onShow(() => {
+		refresh()
+	})
+
+	function refresh() {
+		const records = loadRecords()
+		totalCount.value = records.length
+		markMap.value = recordCountByDate()
+		dayRecords.value = recordsOfDate(selected.value)
+	}
+
+	function dayKeyOf(d : number) : string {
+		return dateKeyOf(year.value, month.value, d)
+	}
+
+	function hasMark(d : number) : boolean {
+		const n = markMap.value.get(dayKeyOf(d))
+		return n != null && (n as number) > 0
+	}
+
+	function pickDay(d : number) {
+		if (d == 0) {
+			return
+		}
+		selected.value = dayKeyOf(d)
+		expandedId.value = ''
+		dayRecords.value = recordsOfDate(selected.value)
+	}
+
+	function prevMonth() {
+		if (month.value == 1) {
+			month.value = 12
+			year.value -= 1
+		} else {
+			month.value -= 1
+		}
+		selectFirstOfMonth()
+	}
+
+	function nextMonth() {
+		if (month.value == 12) {
+			month.value = 1
+			year.value += 1
+		} else {
+			month.value += 1
+		}
+		selectFirstOfMonth()
+	}
+
+	function selectFirstOfMonth() {
+		const key = dateKeyOf(year.value, month.value, 1)
+		selected.value = key
+		expandedId.value = ''
+		dayRecords.value = recordsOfDate(key)
+	}
+
+	function toggleExpand(id : string) {
+		if (expandedId.value == id) {
+			expandedId.value = ''
+		} else {
+			expandedId.value = id
+		}
+	}
+
+	function confirmDelete(id : string) {
+		uni.showModal({
+			title: '删除训练',
+			content: '确定删除这次训练记录吗？',
+			success: (res) => {
+				if (res.confirm) {
+					removeRecord(id)
+					expandedId.value = ''
+					refresh()
+				}
+			}
+		})
+	}
+
+	function recordSub(item : TrainRecord) : string {
+		let sets = 0
+		item.moves.forEach((m : TrainMove) => {
+			sets += m.sets.length
+		})
+		const vol = Math.round(recordVolume(item))
+		let dur = 0
+		if (item.end > item.start) {
+			dur = Math.floor((item.end - item.start) / 1000)
+		}
+		let text = item.moves.length.toString() + ' 个动作 · ' + sets.toString() + ' 组'
+		if (vol > 0) {
+			text += ' · ' + vol.toString() + 'kg'
+		}
+		if (dur > 0) {
+			text += ' · ' + formatDuration(dur)
+		}
+		return text
+	}
+
+	function setText(s : TrainSet) : string {
+		if (s.weight > 0) {
+			return s.weight.toString() + 'kg × ' + s.reps.toString()
+		}
+		return s.reps.toString() + ' 次'
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		background-color: #F2F2F7;
+	}
+
+	.status-bar {
+		height: var(--status-bar-height);
+	}
+
+	.header {
+		padding: 8px 20px 12px 20px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.title {
+		font-size: 30px;
+		font-weight: 700;
+		color: #1C1C1E;
+	}
+
+	.subtitle {
+		font-size: 13px;
+		color: #8E8E93;
+		margin-top: 3px;
+	}
+
+	.body {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.calendar {
+		margin: 0 14px;
+		padding: 14px 12px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.cal-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 8px 8px 8px;
+	}
+
+	.cal-arrow {
+		width: 40px;
+		font-size: 22px;
+		color: #007AFF;
+		text-align: center;
+	}
+
+	.cal-month {
+		font-size: 16px;
+		font-weight: 700;
+		color: #1C1C1E;
+	}
+
+	.week-row {
+		display: flex;
+		flex-direction: row;
+		padding-top: 6px;
+	}
+
+	.week-cell {
+		flex: 1;
+		font-size: 11px;
+		color: #8E8E93;
+		text-align: center;
+	}
+
+	.days-wrap {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-top: 6px;
+	}
+
+	.day-cell {
+		width: 14.28%;
+		height: 46px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.day-inner {
+		width: 38px;
+		height: 38px;
+		border-radius: 19px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.day-selected {
+		background-color: #007AFF;
+	}
+
+	.day-today {
+		border-width: 1px;
+		border-style: solid;
+		border-color: #007AFF;
+	}
+
+	.day-text {
+		font-size: 14px;
+		color: #1C1C1E;
+	}
+
+	.day-text-selected {
+		color: #FFFFFF;
+		font-weight: 700;
+	}
+
+	.day-dot {
+		width: 4px;
+		height: 4px;
+		border-radius: 2px;
+		background-color: #007AFF;
+		margin-top: 1px;
+	}
+
+	.list-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 18px 20px 8px 20px;
+	}
+
+	.list-title {
+		font-size: 17px;
+		font-weight: 700;
+		color: #1C1C1E;
+	}
+
+	.list-count {
+		font-size: 12px;
+		color: #8E8E93;
+	}
+
+	.empty {
+		margin: 4px 14px;
+		padding: 30px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		display: flex;
+		flex-direction: row;
+		justify-content: center;
+	}
+
+	.empty-text {
+		font-size: 13px;
+		color: #8E8E93;
+	}
+
+	.record {
+		margin: 10px 14px 0 14px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.record-head {
+		padding: 14px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.record-head-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.record-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1C1C1E;
+	}
+
+	.record-sub {
+		font-size: 11px;
+		color: #8E8E93;
+		margin-top: 4px;
+	}
+
+	.record-arrow {
+		font-size: 18px;
+		color: #C7C7CC;
+	}
+
+	.record-detail {
+		padding: 0 14px 12px 14px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.detail-move {
+		padding-top: 10px;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #F2F2F7;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.detail-name {
+		font-size: 14px;
+		font-weight: 600;
+		color: #3A3A3C;
+	}
+
+	.detail-sets {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-top: 6px;
+	}
+
+	.detail-set {
+		font-size: 12px;
+		color: #636366;
+		background-color: #F2F2F7;
+		border-radius: 4px;
+		padding: 3px 8px;
+		margin-right: 6px;
+		margin-top: 4px;
+	}
+
+	.record-actions {
+		margin-top: 14px;
+		display: flex;
+		flex-direction: row;
+		justify-content: center;
+	}
+
+	.delete-text {
+		font-size: 12px;
+		color: #FF3B30;
+		padding: 6px 12px;
+	}
+
+	.bottom-space {
+		height: 24px;
+	}
+</style>

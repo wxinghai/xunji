@@ -1,0 +1,457 @@
+<template>
+	<view class="page">
+		<view class="status-bar"></view>
+		<view class="header">
+			<view class="header-left">
+				<text class="title">训练</text>
+				<text class="subtitle">{{todayText}}</text>
+			</view>
+			<view class="header-badge">
+				<text class="badge-num">{{weekCount}}</text>
+				<text class="badge-label">本周</text>
+			</view>
+		</view>
+
+		<scroll-view class="body" direction="vertical">
+			<view class="hero">
+				<view class="hero-top">
+					<text class="hero-label">今日训练</text>
+					<text class="hero-state">{{todayStateText}}</text>
+				</view>
+				<view class="hero-stats">
+					<view class="hero-stat">
+						<text class="hero-num">{{todaySets}}</text>
+						<text class="hero-unit">组</text>
+					</view>
+					<view class="hero-stat">
+						<text class="hero-num">{{todayVolume}}</text>
+						<text class="hero-unit">kg 容量</text>
+					</view>
+					<view class="hero-stat">
+						<text class="hero-num">{{todayMinutes}}</text>
+						<text class="hero-unit">分钟</text>
+					</view>
+				</view>
+				<view class="hero-btn" @tap="startTraining">
+					<text class="hero-btn-text">{{actionText}}</text>
+				</view>
+			</view>
+
+			<view class="section-head">
+				<text class="section-title">最近训练</text>
+				<text class="section-more" @tap="goHistory">全部</text>
+			</view>
+
+			<view v-if="recent.length == 0" class="empty">
+				<text class="empty-title">还没有训练记录</text>
+				<text class="empty-sub">从动作库挑一个动作，开始第一次训练</text>
+				<view class="empty-btn" @tap="goMovement">
+					<text class="empty-btn-text">浏览动作库</text>
+				</view>
+			</view>
+
+			<view v-for="item in recent" :key="item.id" class="record" @tap="openHistory">
+				<view class="record-date">
+					<text class="record-day">{{dayOf(item.date)}}</text>
+					<text class="record-month">{{monthOf(item.date)}}</text>
+				</view>
+				<view class="record-main">
+					<text class="record-title">{{item.title}}</text>
+					<text class="record-sub">{{recordSub(item)}}</text>
+				</view>
+				<text class="record-arrow">›</text>
+			</view>
+
+			<view class="bottom-space"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="ts">
+	import { todayLabel, todayKey, formatDuration } from '@/common/date.uts'
+	import { loadRecords, loadActive, newRecord, saveActive, recordVolume, recordSets } from '@/common/storage.uts'
+	import type { TrainRecord, TrainMove, TrainSet } from '@/common/types.uts'
+
+	const todayText = ref(todayLabel())
+	const records = ref<TrainRecord[]>([])
+	const active = ref<TrainRecord | null>(null)
+	const todayRecords = ref<TrainRecord[]>([])
+	const recent = ref<TrainRecord[]>([])
+	const weekCount = ref(0)
+
+	const todaySets = computed<number>(() : number => {
+		let n = 0
+		todayRecords.value.forEach((r : TrainRecord) => {
+			n += recordSets(r)
+		})
+		return n
+	})
+
+	const todayVolume = computed<number>(() : number => {
+		let n = 0
+		todayRecords.value.forEach((r : TrainRecord) => {
+			n += recordVolume(r)
+		})
+		return Math.round(n)
+	})
+
+	const todayMinutes = computed<number>(() : number => {
+		let n = 0
+		todayRecords.value.forEach((r : TrainRecord) => {
+			if (r.end > r.start) {
+				n += Math.floor((r.end - r.start) / 60000)
+			}
+		})
+		return n
+	})
+
+	const todayStateText = computed<string>(() : string => {
+		if (todayRecords.value.length == 0 && active.value == null) {
+			return '今天还没开始'
+		}
+		if (active.value != null) {
+			return '进行中 · ' + active.value.moves.length.toString() + ' 个动作'
+		}
+		return '已完成 ' + todayRecords.value.length.toString() + ' 次'
+	})
+
+	const actionText = computed<string>(() : string => {
+		if (active.value != null) {
+			return '继续训练'
+		}
+		if (todayRecords.value.length > 0) {
+			return '再练一次'
+		}
+		return '开始训练'
+	})
+
+	onShow(() => {
+		refresh()
+	})
+
+	function refresh() {
+		const all = loadRecords()
+		records.value = all
+		todayText.value = todayLabel()
+		const tk = todayKey()
+		todayRecords.value = all.filter((r : TrainRecord) : boolean => r.date == tk)
+		active.value = loadActive()
+		const top : TrainRecord[] = []
+		for (let i = 0; i < all.length && top.length < 8; i++) {
+			top.push(all[i])
+		}
+		recent.value = top
+		const now = new Date()
+		const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay())
+		let wc = 0
+		all.forEach((r : TrainRecord) => {
+			if (r.start >= startOfWeek.getTime()) {
+				wc += 1
+			}
+		})
+		weekCount.value = wc
+	}
+
+	function startTraining() {
+		const running = loadActive()
+		if (running != null) {
+			uni.navigateTo({ url: '/pages/session/index' })
+			return
+		}
+		const rec = newRecord()
+		rec.date = todayKey()
+		saveActive(rec)
+		uni.navigateTo({ url: '/pages/session/index' })
+	}
+
+	function goHistory() {
+		uni.switchTab({ url: '/pages/history/index' })
+	}
+
+	function goMovement() {
+		uni.switchTab({ url: '/pages/movement/index' })
+	}
+
+	function openHistory() {
+		uni.switchTab({ url: '/pages/history/index' })
+	}
+
+	function dayOf(date : string) : string {
+		if (date.length < 10) {
+			return '--'
+		}
+		return date.substring(8, 10)
+	}
+
+	function monthOf(date : string) : string {
+		if (date.length < 7) {
+			return ''
+		}
+		return parseInt(date.substring(5, 7)).toString() + '月'
+	}
+
+	function recordSub(item : TrainRecord) : string {
+		let sets = 0
+		item.moves.forEach((m : TrainMove) => {
+			sets += m.sets.length
+		})
+		const vol = Math.round(recordVolume(item))
+		let dur = 0
+		if (item.end > item.start) {
+			dur = Math.floor((item.end - item.start) / 60000)
+		}
+		if (vol > 0) {
+			return item.moves.length.toString() + ' 个动作 · ' + sets.toString() + ' 组 · ' + vol.toString() + 'kg'
+		}
+		return item.moves.length.toString() + ' 个动作 · ' + sets.toString() + ' 组 · ' + dur.toString() + ' 分钟'
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		background-color: #F2F2F7;
+	}
+
+	.status-bar {
+		height: var(--status-bar-height);
+	}
+
+	.header {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 8px 20px 12px 20px;
+	}
+
+	.header-left {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.title {
+		font-size: 30px;
+		font-weight: 700;
+		color: #1C1C1E;
+	}
+
+	.subtitle {
+		font-size: 13px;
+		color: #8E8E93;
+		margin-top: 3px;
+	}
+
+	.header-badge {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 8px 14px;
+	}
+
+	.badge-num {
+		font-size: 18px;
+		font-weight: 700;
+		color: #007AFF;
+	}
+
+	.badge-label {
+		font-size: 10px;
+		color: #8E8E93;
+		margin-top: 1px;
+	}
+
+	.body {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.hero {
+		margin: 4px 16px 8px 16px;
+		padding: 18px;
+		border-radius: 18px;
+		background-color: #0A84FF;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.hero-top {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.hero-label {
+		font-size: 13px;
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.hero-state {
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.9);
+	}
+
+	.hero-stats {
+		display: flex;
+		flex-direction: row;
+		margin-top: 16px;
+	}
+
+	.hero-stat {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: flex-end;
+	}
+
+	.hero-num {
+		font-size: 24px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+
+	.hero-unit {
+		font-size: 11px;
+		color: rgba(255, 255, 255, 0.8);
+		margin-left: 3px;
+	}
+
+	.hero-btn {
+		margin-top: 18px;
+		height: 44px;
+		border-radius: 12px;
+		background-color: #FFFFFF;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.hero-btn-text {
+		font-size: 15px;
+		font-weight: 600;
+		color: #0A84FF;
+	}
+
+	.section-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 18px 20px 8px 20px;
+	}
+
+	.section-title {
+		font-size: 18px;
+		font-weight: 700;
+		color: #1C1C1E;
+	}
+
+	.section-more {
+		font-size: 13px;
+		color: #007AFF;
+	}
+
+	.empty {
+		margin: 8px 16px;
+		padding: 24px 18px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.empty-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1C1C1E;
+	}
+
+	.empty-sub {
+		font-size: 12px;
+		color: #8E8E93;
+		margin-top: 6px;
+		text-align: center;
+	}
+
+	.empty-btn {
+		margin-top: 16px;
+		padding: 8px 20px;
+		border-radius: 20px;
+		background-color: #EAF3FF;
+	}
+
+	.empty-btn-text {
+		font-size: 13px;
+		font-weight: 600;
+		color: #007AFF;
+	}
+
+	.record {
+		margin: 8px 16px 0 16px;
+		padding: 14px;
+		background-color: #FFFFFF;
+		border-radius: 16px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.record-date {
+		width: 44px;
+		height: 44px;
+		border-radius: 12px;
+		background-color: #F2F2F7;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.record-day {
+		font-size: 17px;
+		font-weight: 700;
+		color: #1C1C1E;
+	}
+
+	.record-month {
+		font-size: 9px;
+		color: #8E8E93;
+	}
+
+	.record-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		margin-left: 12px;
+	}
+
+	.record-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1C1C1E;
+	}
+
+	.record-sub {
+		font-size: 12px;
+		color: #8E8E93;
+		margin-top: 4px;
+	}
+
+	.record-arrow {
+		font-size: 22px;
+		color: #C7C7CC;
+		margin-left: 8px;
+	}
+
+	.bottom-space {
+		height: 24px;
+	}
+</style>

@@ -1,0 +1,284 @@
+<template>
+	<view class="page">
+		<view class="search-wrap">
+			<view class="search-box">
+				<text class="search-icon">⌕</text>
+				<input class="search-input" type="text" v-model="keyword" placeholder="搜索动作、部位、器械"
+					placeholder-style="color:#8E8E93" />
+				<text v-if="keyword.length > 0" class="search-clear" @tap="clearKeyword">×</text>
+			</view>
+		</view>
+
+		<view class="content">
+			<scroll-view class="side" direction="vertical" show-scrollbar="false">
+				<view v-for="g in groups" :key="g.key" class="side-item"
+					:class="{ 'side-item-active': g.key == category }" @tap="selectCategory(g.key)">
+					<text class="side-text" :class="{ 'side-text-active': g.key == category }">{{g.label}}</text>
+				</view>
+			</scroll-view>
+
+			<list-view class="list" direction="vertical" show-scrollbar="false">
+				<list-item v-for="m in filtered" :key="m.id" class="move" @tap="toggle(m)">
+					<view class="move-icon" :class="{ 'move-icon-on': isAdded(m.id) }">
+						<text class="move-icon-text" :class="{ 'move-icon-text-on': isAdded(m.id) }">{{isAdded(m.id) ? '✓' : m.category.substring(0, 1)}}</text>
+					</view>
+					<view class="move-main">
+						<text class="move-name">{{m.name}}</text>
+						<text class="move-sub">{{m.category}} · {{sectionLabel(m.section)}}</text>
+					</view>
+					<text class="move-tag">{{isAdded(m.id) ? '已添加' : ''}}</text>
+				</list-item>
+			</list-view>
+		</view>
+
+		<view class="footer">
+			<view class="footer-btn" @tap="done">
+				<text class="footer-text">完成{{addedCount > 0 ? '（' + addedCount.toString() + '）' : ''}}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="ts">
+	import { moveGroups, searchMoves, sectionLabel } from '@/common/moves.uts'
+	import { loadActive, saveActive, newMove } from '@/common/storage.uts'
+	import type { Movement, MovementGroup, TrainRecord } from '@/common/types.uts'
+
+	const keyword = ref('')
+	const category = ref('胸')
+	const groups = ref<MovementGroup[]>(moveGroups())
+	const addedIds = ref<string[]>([])
+	const addedCount = ref(0)
+
+	const filtered = computed<Movement[]>(() : Movement[] => {
+		return searchMoves(keyword.value, category.value)
+	})
+
+	onShow(() => {
+		refreshAdded()
+	})
+
+	function refreshAdded() {
+		const rec = loadActive()
+		const ids : string[] = []
+		if (rec != null) {
+			rec.moves.forEach((m) => {
+				ids.push(m.key)
+			})
+		}
+		addedIds.value = ids
+		addedCount.value = ids.length
+	}
+
+	function isAdded(id : string) : boolean {
+		return addedIds.value.includes(id)
+	}
+
+	function selectCategory(key : string) {
+		category.value = key
+	}
+
+	function clearKeyword() {
+		keyword.value = ''
+	}
+
+	function toggle(m : Movement) {
+		const rec = loadActive()
+		if (rec == null) {
+			uni.showToast({ title: '请先开始训练', icon: 'none' })
+			return
+		}
+		let idx = -1
+		for (let i = 0; i < rec.moves.length; i++) {
+			if (rec.moves[i].key == m.id) {
+				idx = i
+				break
+			}
+		}
+		if (idx >= 0) {
+			rec.moves.splice(idx, 1)
+		} else {
+			rec.moves.push(newMove(m))
+		}
+		saveActive(rec)
+		refreshAdded()
+	}
+
+	function done() {
+		uni.navigateBack({})
+	}
+</script>
+
+<style>
+	.page {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		background-color: #F2F2F7;
+	}
+
+	.search-wrap {
+		padding: 10px 16px;
+		background-color: #F2F2F7;
+	}
+
+	.search-box {
+		height: 38px;
+		border-radius: 10px;
+		background-color: #E4E4E9;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding-left: 10px;
+		padding-right: 8px;
+	}
+
+	.search-icon {
+		font-size: 16px;
+		color: #8E8E93;
+	}
+
+	.search-input {
+		flex: 1;
+		height: 38px;
+		font-size: 14px;
+		color: #1C1C1E;
+		margin-left: 6px;
+		background-color: #E4E4E9;
+	}
+
+	.search-clear {
+		width: 22px;
+		font-size: 18px;
+		color: #8E8E93;
+		text-align: center;
+	}
+
+	.content {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+	}
+
+	.side {
+		width: 88px;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.side-item {
+		padding: 12px 6px 12px 10px;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.side-item-active {
+		background-color: #FFFFFF;
+		border-top-left-radius: 10px;
+		border-bottom-left-radius: 10px;
+	}
+
+	.side-text {
+		font-size: 13px;
+		color: #636366;
+	}
+
+	.side-text-active {
+		font-size: 14px;
+		font-weight: 700;
+		color: #007AFF;
+	}
+
+	.list {
+		flex: 1;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		background-color: #FFFFFF;
+		border-top-left-radius: 12px;
+	}
+
+	.move {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 12px 14px;
+		border-bottom-width: 1px;
+		border-bottom-style: solid;
+		border-bottom-color: #F2F2F7;
+	}
+
+	.move-icon {
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
+		background-color: #F2F2F7;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.move-icon-on {
+		background-color: #34C759;
+	}
+
+	.move-icon-text {
+		font-size: 14px;
+		font-weight: 700;
+		color: #8E8E93;
+	}
+
+	.move-icon-text-on {
+		color: #FFFFFF;
+	}
+
+	.move-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		margin-left: 12px;
+	}
+
+	.move-name {
+		font-size: 15px;
+		font-weight: 600;
+		color: #1C1C1E;
+	}
+
+	.move-sub {
+		font-size: 11px;
+		color: #8E8E93;
+		margin-top: 3px;
+	}
+
+	.move-tag {
+		font-size: 11px;
+		color: #34C759;
+	}
+
+	.footer {
+		padding: 10px 16px 16px 16px;
+		background-color: #FFFFFF;
+		border-top-width: 1px;
+		border-top-style: solid;
+		border-top-color: #E5E5EA;
+	}
+
+	.footer-btn {
+		height: 48px;
+		border-radius: 14px;
+		background-color: #007AFF;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.footer-text {
+		font-size: 16px;
+		font-weight: 600;
+		color: #FFFFFF;
+	}
+</style>

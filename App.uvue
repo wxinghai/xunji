@@ -1,0 +1,41 @@
+<script setup>
+	// #ifdef APP-ANDROID || APP-HARMONY
+	let firstBackTime = 0
+	// #endif
+
+	onLaunch(() => {
+		console.log('训记 launch')
+	})
+
+	// #ifdef APP-ANDROID || APP-HARMONY
+	onLastPageBackPress(() => {
+		if (firstBackTime == 0) {
+			uni.showToast({
+				title: '再按一次退出训记',
+				position: 'bottom',
+			})
+			firstBackTime = Date.now()
+			setTimeout(() => {
+				firstBackTime = 0
+			}, 2000)
+		} else if (Date.now() - firstBackTime < 2000) {
+			firstBackTime = Date.now()
+			uni.exit()
+		}
+	})
+	// #endif
+</script>
+
+<style>
+	.uni-row {
+		flex-direction: row;
+	}
+
+	.uni-column {
+		flex-direction: column;
+	}
+
+	.page-bg {
+		background-color: #F2F2F7;
+	}
+</style>

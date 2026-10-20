@@ -1,0 +1,52 @@
+export type Movement = {
+	id : string
+	name : string
+	category : string
+	exetype : string
+	aliases : string[]
+	primary : string[]
+	secondary : string[]
+	section : string
+	classes : string[]
+	bodyweight_only : boolean
+	load_type : string
+	home_friendly : boolean
+}
+
+export type TrainSet = {
+	weight : number
+	reps : number
+	seconds : number
+	done : boolean
+}
+
+export type TrainMove = {
+	key : string
+	name : string
+	category : string
+	exetype : string
+	section : string
+	sets : TrainSet[]
+}
+
+export type TrainRecord = {
+	id : string
+	date : string
+	title : string
+	note : string
+	start : number
+	end : number
+	moves : TrainMove[]
+}
+
+export type MovementGroup = {
+	key : string
+	label : string
+	count : number
+}
+
+export type DayMark = {
+	date : string
+	count : number
+	volume : number
+}

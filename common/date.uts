@@ -1,0 +1,57 @@
+export function pad2(n : number) : string {
+	return n < 10 ? '0' + n.toString() : n.toString()
+}
+
+export function dateKey(d : Date) : string {
+	return d.getFullYear().toString() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
+}
+
+export function dateKeyOf(year : number, month : number, day : number) : string {
+	return year.toString() + '-' + pad2(month) + '-' + pad2(day)
+}
+
+export function todayKey() : string {
+	return dateKey(new Date())
+}
+
+export function todayLabel() : string {
+	const d = new Date()
+	const weeks : string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+	return (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 ' + weeks[d.getDay()]
+}
+
+export function daysInMonth(year : number, month : number) : number {
+	return new Date(year, month, 0).getDate()
+}
+
+export function firstWeekday(year : number, month : number) : number {
+	return new Date(year, month - 1, 1).getDay()
+}
+
+export function formatDuration(seconds : number) : string {
+	if (seconds < 60) {
+		return seconds.toString() + '秒'
+	}
+	const m = Math.floor(seconds / 60)
+	if (m < 60) {
+		return m.toString() + '分钟'
+	}
+	const h = Math.floor(m / 60)
+	const rest = m % 60
+	return h.toString() + '小时' + rest.toString() + '分'
+}
+
+export function formatClock(seconds : number) : string {
+	const m = Math.floor(seconds / 60)
+	const s = seconds % 60
+	return pad2(m) + ':' + pad2(s)
+}
+
+export function shortDate(key : string) : string {
+	if (key.length < 10) {
+		return key
+	}
+	const month = parseInt(key.substring(5, 7))
+	const day = parseInt(key.substring(8, 10))
+	return month.toString() + '月' + day.toString() + '日'
+}
