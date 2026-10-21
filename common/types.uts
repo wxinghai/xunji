@@ -18,6 +18,8 @@ export type TrainSet = {
 	reps : number
 	seconds : number
 	done : boolean
+	setType : string
+	unit : string
 }
 
 export type TrainMove = {
@@ -27,6 +29,8 @@ export type TrainMove = {
 	exetype : string
 	section : string
 	sets : TrainSet[]
+	restTime : number
+	oneSide : boolean
 }
 
 export type TrainRecord = {
@@ -49,4 +53,15 @@ export type DayMark = {
 	date : string
 	count : number
 	volume : number
+	title : string
+}
+
+export type TodayCard = {
+	id : string
+	title : string
+	moveCount : number
+	setCount : number
+	doneCount : number
+	percent : number
+	duration : number
 }

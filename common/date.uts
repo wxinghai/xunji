@@ -20,6 +20,12 @@ export function todayLabel() : string {
 	return (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 ' + weeks[d.getDay()]
 }
 
+export function fullDateLabel() : string {
+	const d = new Date()
+	const weeks : string[] = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+	return d.getFullYear().toString() + '年' + (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 ' + weeks[d.getDay()]
+}
+
 export function daysInMonth(year : number, month : number) : number {
 	return new Date(year, month, 0).getDate()
 }

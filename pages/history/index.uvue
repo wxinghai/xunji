@@ -1,27 +1,34 @@
 <template>
 	<view class="page">
 		<view class="status-bar"></view>
-		<view class="header">
-			<text class="title">历史</text>
-			<text class="subtitle">共 {{totalCount}} 次训练</text>
+		<view class="cal-head">
+			<text class="cal-arrow" @tap="prevMonth">‹</text>
+			<view class="month-text-wrap">
+				<text class="month-year">{{year}} 年</text>
+				<text class="month-main">{{month}} 月</text>
+			</view>
+			<text class="cal-arrow" @tap="nextMonth">›</text>
+			<text v-if="!isCurrentMonth" class="back-btn" @tap="backToCurrent">回到本月</text>
+		</view>
+
+		<view class="week-row">
+			<text v-for="w in weekLabels" :key="w" class="week-cell" :style="cellStyle">{{w}}</text>
 		</view>
 
 		<scroll-view class="body" direction="vertical">
-			<view class="calendar">
-				<view class="cal-head">
-					<text class="cal-arrow" @tap="prevMonth">‹</text>
-					<text class="cal-month">{{monthLabel}}</text>
-					<text class="cal-arrow" @tap="nextMonth">›</text>
-				</view>
-				<view class="week-row">
-					<text v-for="w in weekLabels" :key="w" class="week-cell">{{w}}</text>
-				</view>
-				<view class="days-wrap">
-					<view v-for="(d, idx) in cells" :key="idx" class="day-cell" @tap="pickDay(d)">
-						<view v-if="d > 0" class="day-inner" :class="{ 'day-selected': dayKeyOf(d) == selected, 'day-today': dayKeyOf(d) == today }">
-							<text class="day-text" :class="{ 'day-text-selected': dayKeyOf(d) == selected }">{{d}}</text>
-							<view v-if="hasMark(d)" class="day-dot"></view>
-						</view>
+			<view class="days-wrap">
+				<view v-for="c in cells" :key="c.key" class="day-cell"
+					:class="{ 'day-cell-dim': !c.inMonth }" :style="cellStyle" @tap="pickDay(c)">
+					<view class="day-badge"
+						:class="{ 'day-badge-today': c.key == today, 'day-badge-selected': c.key == selected }">
+						<text class="day-text" :class="{ 'day-text-white': c.key == today || c.key == selected }">{{c.day}}</text>
+					</view>
+					<view v-if="c.hasMark" class="bar-summary"
+						:class="{ 'bar-summary-today': c.key == today }" :style="barStyle">
+						<text class="bar-summary-text">{{c.volumeText}}</text>
+					</view>
+					<view v-if="c.hasMark && c.title.length > 0" class="bar-title" :style="barStyle">
+						<text class="bar-title-text" :max-lines="3">{{c.title}}</text>
 					</view>
 				</view>
 			</view>
@@ -63,34 +70,67 @@
 </template>
 
 <script setup lang="ts">
-	import { todayKey, dateKeyOf, daysInMonth, firstWeekday, shortDate, formatDuration } from '@/common/date.uts'
-	import { loadRecords, recordsOfDate, recordCountByDate, removeRecord, recordVolume } from '@/common/storage.uts'
-	import type { TrainRecord, TrainMove, TrainSet } from '@/common/types.uts'
+	import { todayKey, dateKeyOf, daysInMonth, firstWeekday, formatDuration, pad2 } from '@/common/date.uts'
+	import { loadRecords, recordsOfDate, removeRecord } from '@/common/storage.uts'
+	import { buildMonthMarks, recordVolume, recordSets, trainPercent, trainDuration } from '@/common/calc.uts'
+	import type { TrainRecord, TrainSet, DayMark } from '@/common/types.uts'
 
+	type CalCell = {
+		day : number
+		inMonth : boolean
+		key : string
+		hasMark : boolean
+		volumeText : string
+		title : string
+	}
+
+	const W = uni.getWindowInfo().windowWidth
+	const cellW = (W - 24) / 7
+	const barW = (W - 32) / 7
 	const weekLabels : string[] = ['日', '一', '二', '三', '四', '五', '六']
 	const now = new Date()
 	const year = ref(now.getFullYear())
 	const month = ref(now.getMonth() + 1)
 	const today = todayKey()
 	const selected = ref(today)
-	const totalCount = ref(0)
-	const markMap = ref<Map<string, number>>(new Map())
+	const marks = ref<Map<string, DayMark>>(new Map<string, DayMark>())
 	const dayRecords = ref<TrainRecord[]>([])
 	const expandedId = ref('')
 
-	const monthLabel = computed<string>(() : string => {
-		return year.value.toString() + ' 年 ' + month.value.toString() + ' 月'
+	const cellStyle = computed<string>(() : string => {
+		return 'width:' + cellW.toString() + 'px;height:92px;'
 	})
 
-	const cells = computed<number[]>(() : number[] => {
-		const first = firstWeekday(year.value, month.value)
-		const total = daysInMonth(year.value, month.value)
-		const arr : number[] = []
-		for (let i = 0; i < first; i++) {
-			arr.push(0)
+	const barStyle = computed<string>(() : string => {
+		return 'width:' + barW.toString() + 'px;'
+	})
+
+	const isCurrentMonth = computed<boolean>(() : boolean => {
+		return year.value == now.getFullYear() && month.value == now.getMonth() + 1
+	})
+
+	const cells = computed<CalCell[]>(() : CalCell[] => {
+		const y = year.value
+		const m = month.value
+		const first = firstWeekday(y, m)
+		const total = daysInMonth(y, m)
+		const prevY = m == 1 ? y - 1 : y
+		const prevM = m == 1 ? 12 : m - 1
+		const prevTotal = daysInMonth(prevY, prevM)
+		const nextY = m == 12 ? y + 1 : y
+		const nextM = m == 12 ? 1 : m + 1
+		const arr : CalCell[] = []
+		for (let i = first - 1; i >= 0; i--) {
+			const d = prevTotal - i
+			arr.push(makeCell(d, false, dateKeyOf(prevY, prevM, d)))
 		}
 		for (let d = 1; d <= total; d++) {
-			arr.push(d)
+			arr.push(makeCell(d, true, dateKeyOf(y, m, d)))
+		}
+		let nd = 1
+		while (arr.length < 42) {
+			arr.push(makeCell(nd, false, dateKeyOf(nextY, nextM, nd)))
+			nd += 1
 		}
 		return arr
 	})
@@ -111,29 +151,48 @@
 		refresh()
 	})
 
+	function makeCell(day : number, inMonth : boolean, key : string) : CalCell {
+		const mark = marks.value.get(key)
+		let hasMark = false
+		let volumeText = ''
+		let title = ''
+		if (mark != null) {
+			const mk = mark as DayMark
+			hasMark = true
+			title = mk.title
+			if (mk.volume > 0) {
+				volumeText = Math.round(mk.volume).toString()
+			} else {
+				volumeText = mk.count.toString()
+			}
+		}
+		return {
+			day: day,
+			inMonth: inMonth,
+			key: key,
+			hasMark: hasMark,
+			volumeText: volumeText,
+			title: title
+		} as CalCell
+	}
+
 	function refresh() {
-		const records = loadRecords()
-		totalCount.value = records.length
-		markMap.value = recordCountByDate()
+		const all = loadRecords()
+		const monthKey = year.value.toString() + '-' + pad2(month.value)
+		marks.value = buildMonthMarks(all, monthKey)
 		dayRecords.value = recordsOfDate(selected.value)
 	}
 
-	function dayKeyOf(d : number) : string {
-		return dateKeyOf(year.value, month.value, d)
-	}
-
-	function hasMark(d : number) : boolean {
-		const n = markMap.value.get(dayKeyOf(d))
-		return n != null && (n as number) > 0
-	}
-
-	function pickDay(d : number) {
-		if (d == 0) {
+	function pickDay(c : CalCell) {
+		selected.value = c.key
+		expandedId.value = ''
+		if (!c.inMonth) {
+			year.value = parseInt(c.key.substring(0, 4))
+			month.value = parseInt(c.key.substring(5, 7))
+			refresh()
 			return
 		}
-		selected.value = dayKeyOf(d)
-		expandedId.value = ''
-		dayRecords.value = recordsOfDate(selected.value)
+		dayRecords.value = recordsOfDate(c.key)
 	}
 
 	function prevMonth() {
@@ -157,10 +216,17 @@
 	}
 
 	function selectFirstOfMonth() {
-		const key = dateKeyOf(year.value, month.value, 1)
-		selected.value = key
+		selected.value = dateKeyOf(year.value, month.value, 1)
 		expandedId.value = ''
-		dayRecords.value = recordsOfDate(key)
+		refresh()
+	}
+
+	function backToCurrent() {
+		year.value = now.getFullYear()
+		month.value = now.getMonth() + 1
+		selected.value = today
+		expandedId.value = ''
+		refresh()
 	}
 
 	function toggleExpand(id : string) {
@@ -186,19 +252,12 @@
 	}
 
 	function recordSub(item : TrainRecord) : string {
-		let sets = 0
-		item.moves.forEach((m : TrainMove) => {
-			sets += m.sets.length
-		})
+		let text = item.moves.length.toString() + ' 个动作 · ' + recordSets(item).toString() + ' 组 · ' + trainPercent(item).toString() + '%'
 		const vol = Math.round(recordVolume(item))
-		let dur = 0
-		if (item.end > item.start) {
-			dur = Math.floor((item.end - item.start) / 1000)
-		}
-		let text = item.moves.length.toString() + ' 个动作 · ' + sets.toString() + ' 组'
 		if (vol > 0) {
 			text += ' · ' + vol.toString() + 'kg'
 		}
+		const dur = trainDuration(item)
 		if (dur > 0) {
 			text += ' · ' + formatDuration(dur)
 		}
@@ -206,6 +265,9 @@
 	}
 
 	function setText(s : TrainSet) : string {
+		if (s.setType == '热') {
+			return '热'
+		}
 		if (s.weight > 0) {
 			return s.weight.toString() + 'kg × ' + s.reps.toString()
 		}
@@ -225,22 +287,66 @@
 		height: var(--status-bar-height);
 	}
 
-	.header {
-		padding: 8px 20px 12px 20px;
+	.cal-head {
+		padding: 8px 12px 4px 12px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.cal-arrow {
+		width: 30px;
+		height: 44px;
+		font-size: 24px;
+		color: #007AFF;
+		text-align: center;
+	}
+
+	.month-text-wrap {
+		min-width: 54px;
+		height: 44px;
+		margin-left: 2px;
+		margin-right: 2px;
 		display: flex;
 		flex-direction: column;
+		align-items: center;
+		justify-content: center;
 	}
 
-	.title {
-		font-size: 30px;
+	.month-year {
+		font-size: 11px;
+		color: rgba(0, 0, 0, 0.42);
+		margin-bottom: 1px;
+	}
+
+	.month-main {
+		font-size: 21px;
+		line-height: 25px;
 		font-weight: 700;
-		color: #1C1C1E;
+		color: #000000;
 	}
 
-	.subtitle {
-		font-size: 13px;
-		color: #8E8E93;
-		margin-top: 3px;
+	.back-btn {
+		margin-left: 8px;
+		padding: 4px 9px;
+		border-radius: 11px;
+		background-color: #3B82F6;
+		font-size: 10px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+
+	.week-row {
+		padding-left: 12px;
+		padding-right: 12px;
+		display: flex;
+		flex-direction: row;
+	}
+
+	.week-cell {
+		font-size: 11px;
+		color: rgba(0, 0, 0, 0.42);
+		text-align: center;
 	}
 
 	.body {
@@ -249,101 +355,92 @@
 		flex-direction: column;
 	}
 
-	.calendar {
-		margin: 0 14px;
-		padding: 14px 12px;
-		background-color: #FFFFFF;
-		border-radius: 16px;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.cal-head {
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0 8px 8px 8px;
-	}
-
-	.cal-arrow {
-		width: 40px;
-		font-size: 22px;
-		color: #007AFF;
-		text-align: center;
-	}
-
-	.cal-month {
-		font-size: 16px;
-		font-weight: 700;
-		color: #1C1C1E;
-	}
-
-	.week-row {
-		display: flex;
-		flex-direction: row;
-		padding-top: 6px;
-	}
-
-	.week-cell {
-		flex: 1;
-		font-size: 11px;
-		color: #8E8E93;
-		text-align: center;
-	}
-
 	.days-wrap {
+		padding-left: 12px;
+		padding-right: 12px;
 		display: flex;
 		flex-direction: row;
 		flex-wrap: wrap;
-		margin-top: 6px;
 	}
 
 	.day-cell {
-		width: 14.28%;
-		height: 46px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.day-cell-dim {
+		opacity: 0.5;
+	}
+
+	.day-badge {
+		width: 25px;
+		height: 25px;
+		border-radius: 15px;
+		margin-bottom: 2px;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
 	}
 
-	.day-inner {
-		width: 38px;
-		height: 38px;
-		border-radius: 19px;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
+	.day-badge-today {
+		background-color: #58A4F8;
 	}
 
-	.day-selected {
+	.day-badge-selected {
 		background-color: #007AFF;
-	}
-
-	.day-today {
-		border-width: 1px;
-		border-style: solid;
-		border-color: #007AFF;
 	}
 
 	.day-text {
 		font-size: 14px;
-		color: #1C1C1E;
+		color: #000000;
+		text-align: center;
 	}
 
-	.day-text-selected {
+	.day-text-white {
 		color: #FFFFFF;
-		font-weight: 700;
 	}
 
-	.day-dot {
-		width: 4px;
-		height: 4px;
+	.bar-summary {
+		min-height: 12px;
 		border-radius: 2px;
-		background-color: #007AFF;
+		background-color: #2F80ED;
+		margin-bottom: 1px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.bar-summary-today {
+		background-color: #58A4F8;
+	}
+
+	.bar-summary-text {
+		font-size: 9px;
+		font-weight: 700;
+		color: #FFFFFF;
+	}
+
+	.bar-title {
+		min-height: 12px;
+		border-radius: 2px;
+		background-color: #202020;
 		margin-top: 1px;
+		padding-left: 2px;
+		padding-right: 2px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.bar-title-text {
+		font-size: 8px;
+		font-weight: 700;
+		color: #FFFFFF;
+		opacity: 0.9;
 	}
 
 	.list-head {

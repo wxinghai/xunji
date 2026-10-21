@@ -1,0 +1,170 @@
+import type { TrainSet, TrainMove, TrainRecord, DayMark } from './types.uts'
+import { dateKey } from './date.uts'
+
+export function round1(v : number) : number {
+	return Math.round(v * 10) / 10
+}
+
+export function unitFactor(unit : string) : number {
+	return unit == 'lbs' ? 0.4532 : 1
+}
+
+export function setVolume(set : TrainSet, factor : number) : number {
+	if (!set.done) {
+		return 0
+	}
+	if (set.setType == '热') {
+		return 0
+	}
+	const w = set.weight
+	const r = set.reps
+	if (w <= 0 || r <= 0) {
+		return 0
+	}
+	return w * r * factor
+}
+
+export function moveVolume(mv : TrainMove) : number {
+	let sum = 0
+	for (let i = 0; i < mv.sets.length; i++) {
+		const s = mv.sets[i]
+		const u = s.unit == null ? 'kg' : s.unit
+		sum += setVolume(s, unitFactor(u))
+	}
+	if (mv.oneSide) {
+		sum = sum * 2
+	}
+	return round1(sum)
+}
+
+export function recordVolume(rec : TrainRecord) : number {
+	let sum = 0
+	for (let i = 0; i < rec.moves.length; i++) {
+		sum += moveVolume(rec.moves[i])
+	}
+	return round1(sum)
+}
+
+export function recordSets(rec : TrainRecord) : number {
+	let total = 0
+	for (let i = 0; i < rec.moves.length; i++) {
+		total += rec.moves[i].sets.length
+	}
+	return total
+}
+
+export function recordDoneSets(rec : TrainRecord) : number {
+	let done = 0
+	for (let i = 0; i < rec.moves.length; i++) {
+		const sets = rec.moves[i].sets
+		for (let j = 0; j < sets.length; j++) {
+			if (sets[j].done) {
+				done += 1
+			}
+		}
+	}
+	return done
+}
+
+export function oneRM(weight : number, reps : number) : number {
+	if (weight <= 0 || reps <= 0) {
+		return 0
+	}
+	return round1(weight * (1 + 0.0333 * reps))
+}
+
+export function lbsToKg(lbs : number) : number {
+	return lbs * 0.4532
+}
+
+export function kgToLbs(kg : number) : number {
+	return kg / 0.4532
+}
+
+export function trainPercent(rec : TrainRecord) : number {
+	const total = recordSets(rec)
+	if (total == 0) {
+		return 0
+	}
+	return Math.floor(recordDoneSets(rec) * 100 / total)
+}
+
+export function trainDuration(rec : TrainRecord) : number {
+	if (rec.start <= 0 || rec.end <= 0) {
+		return 0
+	}
+	const sec = Math.floor((rec.end - rec.start) / 1000)
+	return sec > 0 ? sec : 0
+}
+
+export function durationHM(sec : number) : string {
+	const h = Math.floor(sec / 3600)
+	const m = Math.floor((sec % 3600) / 60)
+	const mm = m < 10 ? '0' + m.toString() : m.toString()
+	return h.toString() + ':' + mm
+}
+
+export function weekCount(records : TrainRecord[]) : number {
+	const now = new Date()
+	const day = now.getDay()
+	const mondayOffset = day == 0 ? 6 : day - 1
+	const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset)
+	const startKey = dateKey(monday)
+	let n = 0
+	for (let i = 0; i < records.length; i++) {
+		if (records[i].date >= startKey) {
+			n += 1
+		}
+	}
+	return n
+}
+
+export function barTitle(rec : TrainRecord) : string {
+	const seen = new Map<string, boolean>()
+	const parts : string[] = []
+	for (let i = 0; i < rec.moves.length && parts.length < 3; i++) {
+		const c = rec.moves[i].category
+		if (!seen.has(c)) {
+			seen.set(c, true)
+			parts.push(c)
+		}
+	}
+	return parts.length > 0 ? parts.join('·') : rec.title
+}
+
+export function buildMonthMarks(records : TrainRecord[], month : string) : Map<string, DayMark> {
+	const map = new Map<string, DayMark>()
+	for (let i = 0; i < records.length; i++) {
+		const r = records[i]
+		if (r.date.length < 10) {
+			continue
+		}
+		if (r.date.substring(0, 7) != month) {
+			continue
+		}
+		const vol = recordVolume(r)
+		const old = map.get(r.date)
+		if (old == null) {
+			map.set(r.date, {
+				date: r.date,
+				count: 1,
+				volume: vol,
+				title: barTitle(r)
+			} as DayMark)
+		} else {
+			const o = old as DayMark
+			map.set(r.date, {
+				date: r.date,
+				count: o.count + 1,
+				volume: round1(o.volume + vol),
+				title: o.title
+			} as DayMark)
+		}
+	}
+	return map
+}
+
+export function dayMark(map : Map<string, DayMark>, key : string) : DayMark | null {
+	const v = map.get(key)
+	return v == null ? null : (v as DayMark)
+}

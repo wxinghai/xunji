@@ -1,4 +1,5 @@
 import movesJson from '@/static/moves.json'
+import gifJson from '@/static/gif-map.json'
 import type { Movement, MovementGroup } from './types.uts'
 
 export const CATEGORY_ORDER : string[] = [
@@ -8,6 +9,13 @@ export const CATEGORY_ORDER : string[] = [
 ]
 
 export const ALL_MOVES : Movement[] = movesJson as Movement[]
+
+const GIF_MAP = gifJson as UTSJSONObject
+
+export function gifOf(moveId : string) : string {
+	const v = GIF_MAP.getString(moveId)
+	return v == null ? '' : '/static/' + (v as string)
+}
 
 export const SECTION_LABELS : Map<string, string> = new Map<string, string>([
 	['barbell', '杠铃'],

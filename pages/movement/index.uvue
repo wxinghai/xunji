@@ -1,13 +1,14 @@
 <template>
 	<view class="page">
 		<view class="status-bar"></view>
-		<view class="header">
-			<text class="title">动作</text>
-			<view class="search-box">
+		<view class="search-top">
+			<view class="search-wrap">
 				<text class="search-icon">⌕</text>
 				<input class="search-input" type="text" v-model="keyword" placeholder="搜索动作、部位、器械"
-					placeholder-style="color:#8E8E93" confirm-type="search" />
-				<text v-if="keyword.length > 0" class="search-clear" @tap="clearKeyword">×</text>
+					placeholder-style="color:rgba(0,0,0,0.3)" confirm-type="search" />
+				<view v-if="keyword.length > 0" class="search-clear-wrap" @tap="clearKeyword">
+					<text class="search-clear">×</text>
+				</view>
 			</view>
 		</view>
 
@@ -16,38 +17,61 @@
 				<view v-for="g in groups" :key="g.key" class="side-item"
 					:class="{ 'side-item-active': g.key == category }" @tap="selectCategory(g.key)">
 					<text class="side-text" :class="{ 'side-text-active': g.key == category }">{{g.label}}</text>
-					<text class="side-count">{{g.count}}</text>
 				</view>
 			</scroll-view>
 
-			<list-view class="list" direction="vertical" show-scrollbar="false">
-				<list-item v-for="m in filtered" :key="m.id" class="move" @tap="openMove(m.id)">
-					<view class="move-icon">
-						<text class="move-icon-text">{{m.category.substring(0, 1)}}</text>
+			<list-view class="grid" direction="vertical" show-scrollbar="false">
+				<list-item v-for="(row, ri) in rows" :key="ri" class="grid-row">
+					<view v-for="m in row" :key="m.id" class="card" :style="cardStyle" @tap="openMove(m.id)">
+						<image v-if="gifOf(m.id).length > 0" class="card-img" :src="gifOf(m.id)" mode="aspectFit" />
+						<view v-else class="card-ph">
+							<text class="card-ph-text">{{m.name.substring(0, 1)}}</text>
+						</view>
+						<text class="card-name" :max-lines="1">{{m.name}}</text>
 					</view>
-					<view class="move-main">
-						<text class="move-name">{{m.name}}</text>
-						<text class="move-sub">{{moveSub(m)}}</text>
-					</view>
-					<text class="move-arrow">›</text>
 				</list-item>
-				<list-item v-if="filtered.length == 0" class="list-empty">
-					<text class="list-empty-text">没有匹配的动作</text>
+				<list-item v-if="filtered.length == 0" class="grid-empty">
+					<text class="grid-empty-text">没有匹配的动作</text>
 				</list-item>
+				<list-item class="bottom-pad"></list-item>
 			</list-view>
 		</view>
 	</view>
 </template>
 
 <script setup lang="ts">
-	import { moveGroups, searchMoves, sectionLabel, exetypeLabel } from '@/common/moves.uts'
+	import { moveGroups, searchMoves, movesByCategory, gifOf as gifPath } from '@/common/moves.uts'
 	import type { Movement, MovementGroup } from '@/common/types.uts'
 
+	const W = uni.getWindowInfo().windowWidth
+	const cardW = (W - 120) / 2
 	const keyword = ref('')
 	const category = ref('胸')
 	const groups = ref<MovementGroup[]>(moveGroups())
+	const gifCache = new Map<string, string>()
+
 	const filtered = computed<Movement[]>(() : Movement[] => {
-		return searchMoves(keyword.value, category.value)
+		if (keyword.value.trim().length > 0) {
+			return searchMoves(keyword.value, '')
+		}
+		return movesByCategory(category.value)
+	})
+
+	const rows = computed<Movement[][]>(() : Movement[][] => {
+		const src = filtered.value
+		const out : Movement[][] = []
+		for (let i = 0; i < src.length; i += 2) {
+			const pair : Movement[] = [src[i]]
+			if (i + 1 < src.length) {
+				pair.push(src[i + 1])
+			}
+			out.push(pair)
+		}
+		return out
+	})
+
+	const cardStyle = computed<string>(() : string => {
+		return 'width:' + cardW.toString() + 'px;'
 	})
 
 	function selectCategory(key : string) {
@@ -58,18 +82,18 @@
 		keyword.value = ''
 	}
 
-	function openMove(id : string) {
-		uni.navigateTo({ url: '/pages/movement/detail?id=' + id })
+	function gifOf(id : string) : string {
+		const old = gifCache.get(id)
+		if (old != null) {
+			return old as string
+		}
+		const v = gifPath(id)
+		gifCache.set(id, v)
+		return v
 	}
 
-	function moveSub(m : Movement) : string {
-		let muscles = ''
-		if (m.primary.length > 0) {
-			muscles = m.primary.join(' / ')
-		} else {
-			muscles = m.category
-		}
-		return exetypeLabel(m.exetype) + ' · ' + sectionLabel(m.section) + ' · ' + muscles
+	function openMove(id : string) {
+		uni.navigateTo({ url: '/pages/movement/detail?id=' + id })
 	}
 </script>
 
@@ -78,55 +102,63 @@
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		background-color: #F2F2F7;
+		background-color: #F0F0F0;
 	}
 
 	.status-bar {
 		height: var(--status-bar-height);
 	}
 
-	.header {
-		padding: 8px 16px 12px 16px;
+	.search-top {
+		padding: 16px 16px 8px 16px;
 		display: flex;
-		flex-direction: column;
+		flex-direction: row;
 	}
 
-	.title {
-		font-size: 30px;
-		font-weight: 700;
-		color: #1C1C1E;
-	}
-
-	.search-box {
-		margin-top: 10px;
+	.search-wrap {
+		flex: 1;
 		height: 38px;
-		border-radius: 10px;
-		background-color: #E4E4E9;
+		padding-left: 8px;
+		padding-right: 8px;
+		border-radius: 40px;
+		background-color: #FFFFFF;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		padding-left: 10px;
-		padding-right: 8px;
 	}
 
 	.search-icon {
+		width: 15px;
 		font-size: 16px;
-		color: #8E8E93;
+		color: rgba(0, 0, 0, 0.4);
+		margin-left: 8px;
 	}
 
 	.search-input {
 		flex: 1;
 		height: 38px;
+		padding-left: 8px;
+		padding-right: 8px;
 		font-size: 14px;
-		color: #1C1C1E;
-		margin-left: 6px;
-		background-color: #E4E4E9;
+		color: #000000;
+	}
+
+	.search-clear-wrap {
+		width: 40px;
+		height: 38px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.search-clear {
 		width: 22px;
-		font-size: 18px;
-		color: #8E8E93;
+		height: 22px;
+		border-radius: 11px;
+		background-color: rgba(0, 0, 0, 0.1);
+		font-size: 16px;
+		color: rgba(0, 0, 0, 0.5);
 		text-align: center;
 	}
 
@@ -141,107 +173,109 @@
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		background-color: #F2F2F7;
+		background-color: #F0F0F0;
 	}
 
 	.side-item {
-		padding: 12px 6px 12px 10px;
+		padding-top: 12px;
+		padding-bottom: 12px;
+		padding-left: 12px;
+		padding-right: 8px;
+		border-left-width: 4px;
+		border-left-style: solid;
+		border-left-color: rgba(0, 0, 0, 0);
 		display: flex;
 		flex-direction: column;
+		justify-content: center;
 	}
 
 	.side-item-active {
-		background-color: #FFFFFF;
-		border-top-left-radius: 10px;
-		border-bottom-left-radius: 10px;
+		border-left-color: #007AFF;
 	}
 
 	.side-text {
-		font-size: 13px;
-		color: #636366;
+		font-size: 14px;
+		color: rgba(0, 0, 0, 0.5);
 	}
 
 	.side-text-active {
-		font-size: 14px;
 		font-weight: 700;
-		color: #007AFF;
+		color: #000000;
 	}
 
-	.side-count {
-		font-size: 10px;
-		color: #AEAEB2;
-		margin-top: 2px;
-	}
-
-	.list {
+	.grid {
 		flex: 1;
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		background-color: #FFFFFF;
-		border-top-left-radius: 12px;
 	}
 
-	.move {
+	.grid-row {
+		padding-left: 8px;
 		display: flex;
 		flex-direction: row;
-		align-items: center;
-		padding: 12px 14px;
-		border-bottom-width: 1px;
-		border-bottom-style: solid;
-		border-bottom-color: #F2F2F7;
 	}
 
-	.move-icon {
-		width: 40px;
-		height: 40px;
-		border-radius: 10px;
-		background-color: #EAF3FF;
+	.card {
+		padding: 8px;
+		margin-right: 8px;
+		margin-bottom: 8px;
+		border-radius: 16px;
+		background-color: #FFFFFF;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		overflow: hidden;
+	}
+
+	.card-img {
+		width: 70px;
+		height: 70px;
+		border-radius: 35px;
+		background-color: #FFFFFF;
+	}
+
+	.card-ph {
+		width: 70px;
+		height: 70px;
+		border-radius: 40px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: rgba(0, 0, 0, 0.85);
 		display: flex;
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
 	}
 
-	.move-icon-text {
-		font-size: 15px;
+	.card-ph-text {
+		font-size: 24px;
 		font-weight: 700;
-		color: #007AFF;
+		color: rgba(0, 0, 0, 0.85);
 	}
 
-	.move-main {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		margin-left: 12px;
+	.card-name {
+		font-size: 14px;
+		line-height: 16.8px;
+		color: #000000;
+		text-align: center;
+		margin-top: 8px;
+		width: 100%;
 	}
 
-	.move-name {
-		font-size: 15px;
-		font-weight: 600;
-		color: #1C1C1E;
-	}
-
-	.move-sub {
-		font-size: 11px;
-		color: #8E8E93;
-		margin-top: 3px;
-	}
-
-	.move-arrow {
-		font-size: 20px;
-		color: #C7C7CC;
-	}
-
-	.list-empty {
+	.grid-empty {
 		padding: 40px;
 		display: flex;
 		flex-direction: row;
 		justify-content: center;
 	}
 
-	.list-empty-text {
+	.grid-empty-text {
 		font-size: 13px;
-		color: #8E8E93;
+		color: rgba(0, 0, 0, 0.4);
+	}
+
+	.bottom-pad {
+		height: 140px;
 	}
 </style>

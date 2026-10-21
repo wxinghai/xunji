@@ -260,6 +260,7 @@
 
 	.footer {
 		padding: 10px 16px 16px 16px;
+		padding-bottom: calc(16px + env(safe-area-inset-bottom));
 		background-color: #FFFFFF;
 		border-top-width: 1px;
 		border-top-style: solid;

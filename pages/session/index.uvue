@@ -18,9 +18,9 @@
 
 			<view v-for="(mv, mi) in record.moves" :key="mv.key" class="move-card">
 				<view class="move-head">
-					<view class="move-head-main">
+					<view class="move-head-main" @longpress="chooseRest(mi)">
 						<text class="move-name">{{mv.name}}</text>
-						<text class="move-meta">{{mv.category}} · {{typeText(mv.exetype)}} · {{mv.sets.length}} 组</text>
+						<text class="move-meta">{{mv.category}} · {{typeText(mv.exetype)}} · {{mv.sets.length}} 组 · 休息 {{mv.restTime}}s</text>
 					</view>
 					<text class="move-del" @tap="removeMove(mi)">删除</text>
 				</view>
@@ -32,14 +32,17 @@
 					<text class="set-col-done">完成</text>
 				</view>
 
-				<view v-for="(st, si) in mv.sets" :key="si" class="set-row">
-					<text class="set-idx set-idx-num">{{si + 1}}</text>
+				<view v-for="(st, si) in mv.sets" :key="si" class="set-row"
+					:class="{ 'set-row-warm': st.setType == '热' }">
+					<text class="set-idx set-idx-num" @longpress="toggleWarm(mi, si)">{{st.setType == '热' ? '热' : (si + 1).toString()}}</text>
 					<input class="set-input" type="digit" :value="st.weight > 0 ? st.weight.toString() : ''" placeholder="0"
 						placeholder-style="color:#C7C7CC" @input="onWeightInput($event as UniInputEvent, mi, si)" />
 					<input class="set-input" type="digit" :value="st.reps > 0 ? st.reps.toString() : ''" placeholder="0"
 						placeholder-style="color:#C7C7CC" @input="onRepsInput($event as UniInputEvent, mi, si)" />
-					<view class="check" :class="{ 'check-on': st.done }" @tap="toggleSet(mi, si)">
-						<text class="check-mark">{{st.done ? '✓' : ''}}</text>
+					<view class="check" @tap="toggleSet(mi, si)">
+						<view class="check-orb" :class="{ 'check-orb-on': st.done }">
+							<text class="check-mark">{{st.done ? '✓' : ''}}</text>
+						</view>
 					</view>
 				</view>
 
@@ -53,7 +56,7 @@
 
 		<view v-if="restLeft > 0" class="rest-bar">
 			<view class="rest-left">
-				<text class="rest-label">组间休息</text>
+				<text class="rest-label">{{restMoveName}} · 组间休息</text>
 				<text class="rest-time">{{restText}}</text>
 			</view>
 			<view class="rest-skip" @tap="skipRest">
@@ -73,10 +76,11 @@
 </template>
 
 <script setup lang="ts">
-	import { loadActive, saveActive, clearActive, newRecord, upsertRecord, newMove } from '@/common/storage.uts'
+	import { loadActive, saveActive, clearActive, newRecord, upsertRecord, newSet } from '@/common/storage.uts'
 	import { todayKey, formatClock } from '@/common/date.uts'
 	import { exetypeLabel } from '@/common/moves.uts'
-	import type { TrainRecord, TrainMove, TrainSet } from '@/common/types.uts'
+	import { recordSets, recordDoneSets } from '@/common/calc.uts'
+	import type { TrainRecord, TrainMove } from '@/common/types.uts'
 
 	const record = ref<TrainRecord>(newRecord())
 	const elapsed = ref(0)
@@ -85,6 +89,7 @@
 	const setCount = ref(0)
 	const clockText = ref('00:00')
 	const restText = ref('01:30')
+	const restMoveName = ref('')
 	let timer = 0
 
 	onLoad(() => {
@@ -130,8 +135,14 @@
 	}
 
 	function tick() {
-		const start = record.value.start
-		elapsed.value = Math.floor((Date.now() - start) / 1000)
+		const rec = record.value
+		const start = rec.start
+		if (rec.end > 0) {
+			const fixed = Math.floor((rec.end - start) / 1000)
+			elapsed.value = fixed > 0 ? fixed : 0
+		} else {
+			elapsed.value = Math.floor((Date.now() - start) / 1000)
+		}
 		clockText.value = formatClock(elapsed.value)
 		if (restLeft.value > 0) {
 			restLeft.value -= 1
@@ -156,10 +167,13 @@
 	}
 
 	function toggleSet(mi : number, si : number) {
-		const st = record.value.moves[mi].sets[si]
+		const mv = record.value.moves[mi]
+		const st = mv.sets[si]
 		st.done = !st.done
 		if (st.done) {
-			restLeft.value = 90
+			const rest = mv.restTime > 0 ? mv.restTime : 90
+			restLeft.value = rest
+			restMoveName.value = mv.name
 			restText.value = formatClock(restLeft.value)
 		}
 		saveActive(record.value)
@@ -168,25 +182,60 @@
 
 	function addSet(mi : number) {
 		const sets = record.value.moves[mi].sets
-		let last : TrainSet | null = null
+		let weight = 0
+		let reps = 10
 		if (sets.length > 0) {
-			last = sets[sets.length - 1]
+			const last = sets[sets.length - 1]
+			weight = last.weight
+			reps = last.reps
 		}
-		const st : TrainSet = {
-			weight: last == null ? 0 : last.weight,
-			reps: last == null ? 10 : last.reps,
-			seconds: 0,
-			done: false
-		} as TrainSet
-		sets.push(st)
+		sets.push(newSet(weight, reps))
 		saveActive(record.value)
 		countSets()
 	}
 
 	function removeMove(mi : number) {
-		record.value.moves.splice(mi, 1)
-		saveActive(record.value)
-		countSets()
+		const name = record.value.moves[mi].name
+		uni.showModal({
+			title: '删除动作',
+			content: '确定从本次训练中删除「' + name + '」吗？',
+			success: (res) => {
+				if (res.confirm) {
+					record.value.moves.splice(mi, 1)
+					saveActive(record.value)
+					countSets()
+				}
+			}
+		})
+	}
+
+	function toggleWarm(mi : number, si : number) {
+		const st = record.value.moves[mi].sets[si]
+		uni.showActionSheet({
+			itemList: st.setType == '热' ? ['取消热身组'] : ['设为热身组'],
+			success: (res) => {
+				if (res.tapIndex == 0) {
+					st.setType = st.setType == '热' ? '' : '热'
+					saveActive(record.value)
+				}
+			}
+		})
+	}
+
+	function chooseRest(mi : number) {
+		const options : string[] = ['30 秒', '45 秒', '60 秒', '90 秒', '120 秒', '180 秒']
+		const values : number[] = [30, 45, 60, 90, 120, 180]
+		uni.showActionSheet({
+			itemList: options,
+			success: (res) => {
+				const idx = res.tapIndex
+				if (idx >= 0 && idx < values.length) {
+					record.value.moves[mi].restTime = values[idx]
+					saveActive(record.value)
+					uni.showToast({ title: '休息 ' + values[idx].toString() + ' 秒', icon: 'none' })
+				}
+			}
+		})
 	}
 
 	function skipRest() {
@@ -203,6 +252,34 @@
 			uni.showToast({ title: '还没有动作', icon: 'none' })
 			return
 		}
+		if (recordDoneSets(rec) == 0) {
+			uni.showModal({
+				title: '没有完成的组',
+				content: '是否保留这条训练记录？',
+				confirmText: '保留',
+				cancelText: '继续训练',
+				success: (res) => {
+					if (res.confirm) {
+						doFinish()
+					}
+				}
+			})
+			return
+		}
+		uni.showModal({
+			title: '结束训练',
+			content: '本次训练共 ' + moveCount.value.toString() + ' 个动作，' + recordSets(rec).toString() + ' 组',
+			confirmText: '完成',
+			success: (res) => {
+				if (res.confirm) {
+					doFinish()
+				}
+			}
+		})
+	}
+
+	function doFinish() {
+		const rec = record.value
 		rec.end = Date.now()
 		if (rec.date.length == 0) {
 			rec.date = todayKey()
@@ -339,7 +416,7 @@
 	}
 
 	.set-idx {
-		width: 30px;
+		width: 36px;
 		font-size: 11px;
 		color: #8E8E93;
 	}
@@ -371,6 +448,10 @@
 		margin-top: 6px;
 	}
 
+	.set-row-warm {
+		opacity: 0.45;
+	}
+
 	.set-input {
 		flex: 1;
 		height: 34px;
@@ -384,27 +465,34 @@
 	}
 
 	.check {
-		width: 30px;
-		height: 30px;
-		margin-left: 7px;
-		margin-right: 7px;
-		border-radius: 15px;
-		border-width: 1px;
-		border-style: solid;
-		border-color: #C7C7CC;
+		width: 44px;
+		height: 44px;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
 		justify-content: center;
 	}
 
-	.check-on {
-		background-color: #34C759;
-		border-color: #34C759;
+	.check-orb {
+		width: 24px;
+		height: 24px;
+		border-radius: 12px;
+		border-width: 1.5px;
+		border-style: solid;
+		border-color: #D1D1D6;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.check-orb-on {
+		background-color: #007AFF;
+		border-color: #007AFF;
 	}
 
 	.check-mark {
-		font-size: 15px;
+		font-size: 13px;
 		color: #FFFFFF;
 		font-weight: 700;
 	}
@@ -431,10 +519,15 @@
 	}
 
 	.rest-bar {
-		margin: 0 14px 8px 14px;
-		padding: 10px 14px;
-		border-radius: 14px;
-		background-color: #FFF4E5;
+		position: absolute;
+		left: 12px;
+		right: 12px;
+		bottom: 82px;
+		height: 56px;
+		padding-left: 16px;
+		padding-right: 16px;
+		background-color: #1C1C1E;
+		border-radius: 16px;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
@@ -442,37 +535,39 @@
 	}
 
 	.rest-left {
+		flex: 1;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
 	}
 
 	.rest-label {
-		font-size: 12px;
-		color: #B25E00;
+		font-size: 11px;
+		color: rgba(255, 255, 255, 0.6);
 	}
 
 	.rest-time {
-		font-size: 18px;
+		font-size: 20px;
 		font-weight: 700;
-		color: #B25E00;
-		margin-left: 8px;
+		color: #FFFFFF;
+		margin-left: 10px;
 	}
 
 	.rest-skip {
-		padding: 5px 12px;
-		border-radius: 12px;
-		background-color: #FFE0B2;
+		padding: 6px 14px;
+		border-radius: 14px;
+		background-color: rgba(255, 255, 255, 0.15);
 	}
 
 	.rest-skip-text {
 		font-size: 12px;
-		color: #B25E00;
+		color: #FFFFFF;
 		font-weight: 600;
 	}
 
 	.footer {
 		padding: 10px 14px 16px 14px;
+		padding-bottom: calc(16px + env(safe-area-inset-bottom));
 		background-color: #FFFFFF;
 		border-top-width: 1px;
 		border-top-style: solid;
